@@ -92,3 +92,50 @@ class MongoService:
             except Exception:
                 pass
         return cases
+
+    def insert_auth_log(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Stores an authentication log (LOGIN / LOGOUT) in MongoDB or local fallback.
+        """
+        if self.use_mongo:
+            try:
+                self.db.auth_logs.insert_one(dict(log_data))
+                return log_data
+            except Exception as e:
+                logger.error(f"MongoDB insert auth log failed: {e}")
+
+        # Local JSON Fallback
+        logs_file = self.storage_dir / "auth_logs.json"
+        existing = []
+        if logs_file.exists():
+            try:
+                with open(logs_file, "r") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = []
+        existing.insert(0, log_data)
+        with open(logs_file, "w") as f:
+            json.dump(existing[:300], f, indent=2)
+        return log_data
+
+    def list_auth_logs(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all authentication logs sorted by newest first.
+        """
+        if self.use_mongo:
+            try:
+                logs = list(self.db.auth_logs.find({}, {"_id": 0}).sort("timestamp", -1))
+                if logs:
+                    return logs
+            except Exception as e:
+                logger.error(f"MongoDB list auth logs failed: {e}")
+
+        # Local JSON Fallback
+        logs_file = self.storage_dir / "auth_logs.json"
+        if logs_file.exists():
+            try:
+                with open(logs_file, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return []
